@@ -11,6 +11,7 @@
     "deploy": "vercel --prod"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "tsx": "^4.0.0",
