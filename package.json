@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "index": "tsx scripts/index-ownership.ts"
+    "index": "tsx scripts/index-ownership.ts",
+    "deploy": "vercel --prod"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
