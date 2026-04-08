@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --bg-black: #11171A;
+  --deep-charcoal: #192124;
+  --dark-slate: #252B2E;
+  --olive-gray: #31392C;
+  --mid-gray: #495151;
+  --light-gray: #70736E;
+  --soft-text: #999A92;
+  --off-white: #C9D0C0;
+  --neon-green: #8EFD09;
+  --green-dark: #6FC50E;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-black);
+  color: var(--off-white);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(142, 253, 9, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(142, 253, 9, 0.6); }
+}
+
+.glow-pulse {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.nft-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.nft-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
