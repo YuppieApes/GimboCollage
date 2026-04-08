@@ -8,16 +8,20 @@ interface Props {
   gap: number
   bgColor: string
   showIds: boolean
+  /** Fill parent height (e.g. full-screen lightbox). */
+  fillParent?: boolean
+  className?: string
 }
 
 const CollagePreview = forwardRef<HTMLDivElement, Props>(
-  ({ tokenIds, getImageUrl, layout, gap, bgColor, showIds }, ref) => {
+  ({ tokenIds, getImageUrl, layout, gap, bgColor, showIds, fillParent, className }, ref) => {
     const { cols } = getGridConfig(layout, tokenIds.length)
     const [loaded, setLoaded] = useState<Record<number, boolean>>({})
 
     return (
       <div
         ref={ref}
+        className={className}
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
@@ -25,6 +29,9 @@ const CollagePreview = forwardRef<HTMLDivElement, Props>(
           backgroundColor: bgColor,
           padding: `${gap}px`,
           width: '100%',
+          height: fillParent ? '100%' : undefined,
+          minHeight: fillParent ? 0 : undefined,
+          boxSizing: 'border-box',
         }}
       >
         {tokenIds.map(id => (
