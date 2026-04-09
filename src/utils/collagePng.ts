@@ -58,6 +58,70 @@ export async function copyCollageImageToClipboard(
   await copyImageBlobToClipboard(await collageToPngBlob(node, pngOptions))
 }
 
+/** iOS and many mobile browsers ignore or break `<a download>` on blob URLs; opening the image works for long-press → Save. */
+export function openBlobPngInNewTab(blob: Blob): boolean {
+  const url = URL.createObjectURL(blob)
+  const w = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!w) {
+    URL.revokeObjectURL(url)
+    return false
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+  return true
+}
+
+export type SaveCollagePngResult =
+  | { ok: true; via: 'download' | 'new_tab' | 'share_sheet' }
+  | { ok: false }
+
+/**
+ * Desktop: trigger file download. Mobile: open image in a new tab (Save Image) or Web Share with file when popups are blocked.
+ */
+export async function saveCollagePngFromNode(
+  node: HTMLElement,
+  filename: string,
+  pngOptions?: CollagePngOptions,
+): Promise<SaveCollagePngResult> {
+  const blob = await collageToPngBlob(node, pngOptions)
+  const base = filename.replace(/\.png$/i, '')
+  const file = new File([blob], `${base}.png`, {
+    type: blob.type && blob.type !== 'application/octet-stream' ? blob.type : 'image/png',
+  })
+
+  const mobile = preferNativeShareForX()
+
+  if (mobile) {
+    if (openBlobPngInNewTab(blob)) {
+      return { ok: true, via: 'new_tab' }
+    }
+    const shareFiles = { files: [file] }
+    if (
+      typeof navigator.share === 'function' &&
+      navigator.canShare?.(shareFiles)
+    ) {
+      try {
+        await navigator.share(shareFiles)
+        return { ok: true, via: 'share_sheet' }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e
+      }
+    }
+  }
+
+  try {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.download = `${base}.png`
+    link.href = url
+    link.click()
+    URL.revokeObjectURL(url)
+    return { ok: true, via: 'download' }
+  } catch {
+    if (openBlobPngInNewTab(blob)) return { ok: true, via: 'new_tab' }
+    return { ok: false }
+  }
+}
+
 export function twitterIntentTweetUrl(text: string): string {
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`
 }
@@ -94,17 +158,32 @@ export function openXIntentPlaceholderTab(): Window | null {
 
 export type PreparePostOnXResult =
   | { kind: 'shared' }
-  | { kind: 'intent'; xUrl: string; openedTab: boolean }
+  | { kind: 'shared_caption_only' }
+  | {
+      kind: 'intent'
+      xUrl: string
+      openedTab: boolean
+      imageHint: 'paste' | 'save_from_tab' | 'caption_only'
+    }
 
 export type PreparePostOnXOptions = {
-  /** Tab from openXIntentPlaceholderTab(); navigated to X after copy (avoids popup block). */
+  /** Tab from openXIntentPlaceholderTab(); navigated after export (avoids popup block). */
   placeholderTab?: Window | null
   pngOptions?: CollagePngOptions
 }
 
+function safeCloseTab(w: Window | null | undefined): void {
+  if (!w || w.closed) return
+  try {
+    w.close()
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Prefer Web Share (image + caption) on phones.
- * On desktop: copy image, then navigate placeholderTab to tweet intent (or open a new tab if none).
+ * Fallbacks: share file only, share caption only, clipboard + X tab, or image-in-tab + in-app X link.
  */
 export async function preparePostOnX(
   node: HTMLElement,
@@ -115,6 +194,7 @@ export async function preparePostOnX(
   const blob = await collageToPngBlob(node, pngOptions)
   const mime = blob.type && blob.type !== 'application/octet-stream' ? blob.type : 'image/png'
   const file = new File([blob], 'gimboz-collage.png', { type: mime })
+  const xUrl = twitterIntentTweetUrl(caption)
 
   const sharePayload = { files: [file], text: caption }
   if (
@@ -124,26 +204,78 @@ export async function preparePostOnX(
   ) {
     try {
       await navigator.share(sharePayload)
+      safeCloseTab(placeholderTab)
       return { kind: 'shared' }
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e
     }
   }
 
-  if (!navigator.clipboard?.write) {
-    throw new Error('Clipboard not available')
+  const filesOnly = { files: [file] }
+  if (
+    preferNativeShareForX() &&
+    typeof navigator.share === 'function' &&
+    navigator.canShare?.(filesOnly)
+  ) {
+    try {
+      await navigator.share(filesOnly)
+      safeCloseTab(placeholderTab)
+      return { kind: 'shared' }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+    }
   }
 
-  await copyImageBlobToClipboard(blob)
+  const textOnly = { text: caption }
+  if (
+    preferNativeShareForX() &&
+    typeof navigator.share === 'function' &&
+    navigator.canShare?.(textOnly)
+  ) {
+    try {
+      await navigator.share(textOnly)
+      safeCloseTab(placeholderTab)
+      return { kind: 'shared_caption_only' }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+    }
+  }
+
+  let clipboardOk = false
+  if (navigator.clipboard?.write) {
+    try {
+      await copyImageBlobToClipboard(blob)
+      clipboardOk = true
+    } catch {
+      clipboardOk = false
+    }
+  }
+
   await new Promise((r) => setTimeout(r, 100))
 
-  const xUrl = twitterIntentTweetUrl(caption)
-  if (placeholderTab && !placeholderTab.closed) {
-    placeholderTab.location.href = xUrl
-    return { kind: 'intent', xUrl, openedTab: true }
+  if (clipboardOk) {
+    if (placeholderTab && !placeholderTab.closed) {
+      placeholderTab.location.href = xUrl
+      return { kind: 'intent', xUrl, openedTab: true, imageHint: 'paste' }
+    }
+    const openedTab = tryOpenTweetIntent(caption)
+    return { kind: 'intent', xUrl, openedTab, imageHint: 'paste' }
   }
+
+  const imageUrl = URL.createObjectURL(blob)
+  if (placeholderTab && !placeholderTab.closed) {
+    placeholderTab.location.href = imageUrl
+    window.setTimeout(() => URL.revokeObjectURL(imageUrl), 120_000)
+    return { kind: 'intent', xUrl, openedTab: true, imageHint: 'save_from_tab' }
+  }
+
+  URL.revokeObjectURL(imageUrl)
+  if (openBlobPngInNewTab(blob)) {
+    return { kind: 'intent', xUrl, openedTab: true, imageHint: 'save_from_tab' }
+  }
+
   const openedTab = tryOpenTweetIntent(caption)
-  return { kind: 'intent', xUrl, openedTab }
+  return { kind: 'intent', xUrl, openedTab, imageHint: 'caption_only' }
 }
 
 export const X_COLLAGE_CAPTION = `CHURCH! 🐸

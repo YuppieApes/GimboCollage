@@ -2,9 +2,10 @@ import { useState, type RefObject } from 'react'
 import {
   collageToPngBlob,
   copyCollageImageToClipboard,
+  openBlobPngInNewTab,
   openXIntentPlaceholderTab,
-  preferNativeShareForX,
   preparePostOnX,
+  saveCollagePngFromNode,
   type CollagePngOptions,
   X_COLLAGE_CAPTION,
 } from '../utils/collagePng'
@@ -22,7 +23,7 @@ export default function CollageShareActions({
 }: Props) {
   const [busy, setBusy] = useState<'download' | 'copy' | 'x' | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [blockedXUrl, setBlockedXUrl] = useState<string | null>(null)
+  const [blockedX, setBlockedX] = useState<{ url: string; subtitle: string } | null>(null)
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -33,15 +34,23 @@ export default function CollageShareActions({
     if (!targetRef.current) return
     setBusy('download')
     try {
-      const dataUrl = URL.createObjectURL(await collageToPngBlob(targetRef.current, pngOptions))
-      const link = document.createElement('a')
-      link.download = `${filename}.png`
-      link.href = dataUrl
-      link.click()
-      URL.revokeObjectURL(dataUrl)
-      showToast('PNG downloaded')
+      const res = await saveCollagePngFromNode(targetRef.current, filename, pngOptions)
+      if (!res.ok) {
+        alert('Download failed. Try again.')
+        return
+      }
+      if (res.via === 'new_tab') {
+        showToast('Long-press the image → Save to Photos or Share')
+      } else if (res.via === 'share_sheet') {
+        showToast('Save the image from the share sheet, or pick an app')
+      } else {
+        showToast('PNG downloaded')
+      }
     } catch (err) {
       console.error(err)
+      if (err instanceof Error && err.name === 'AbortError') {
+        return
+      }
       alert('Download failed. Try again.')
     } finally {
       setBusy(null)
@@ -50,14 +59,21 @@ export default function CollageShareActions({
 
   const handleCopyImage = async () => {
     if (!targetRef.current) return
-    if (!navigator.clipboard?.write) {
-      alert('Copy to clipboard is not supported in this browser.')
-      return
-    }
     setBusy('copy')
     try {
-      await copyCollageImageToClipboard(targetRef.current, pngOptions)
-      showToast('Collage copied')
+      if (navigator.clipboard?.write) {
+        await copyCollageImageToClipboard(targetRef.current, pngOptions)
+        showToast('Collage copied')
+        return
+      }
+      const blob = await collageToPngBlob(targetRef.current, pngOptions)
+      if (openBlobPngInNewTab(blob)) {
+        showToast('Image opened — long-press to Copy or Save')
+      } else {
+        alert(
+          'Copy isn’t available in this browser. Use Download PNG, or open this page in Safari or Chrome.',
+        )
+      }
     } catch (err) {
       console.error(err)
       alert('Could not copy image. Try Download PNG instead.')
@@ -69,21 +85,47 @@ export default function CollageShareActions({
   const handlePostOnX = async () => {
     if (!targetRef.current) return
     const el = targetRef.current
-    setBlockedXUrl(null)
+    setBlockedX(null)
 
-    const useShare = preferNativeShareForX()
-    const placeholderTab = useShare ? null : openXIntentPlaceholderTab()
+    const placeholderTab = openXIntentPlaceholderTab()
 
     setBusy('x')
     try {
       const result = await preparePostOnX(el, X_COLLAGE_CAPTION, { placeholderTab, pngOptions })
       if (result.kind === 'shared') {
         showToast('Pick X in the share sheet — image and caption go together')
-      } else if (result.openedTab) {
-        showToast('Image copied — switch to the X tab and paste (Ctrl+V / ⌘V) to attach the collage')
+      } else if (result.kind === 'shared_caption_only') {
+        showToast('Caption shared — add the collage from Photos if needed, or use Download PNG')
       } else {
-        setBlockedXUrl(result.xUrl)
-        showToast('Image copied — open X below, then paste to attach the collage')
+        const { xUrl, openedTab, imageHint } = result
+        if (imageHint === 'paste') {
+          if (openedTab) {
+            showToast('Image copied — switch to the X tab and paste to attach the collage')
+          } else {
+            setBlockedX({
+              url: xUrl,
+              subtitle: 'Popup blocked. Your image is copied — open X, then paste to attach.',
+            })
+            showToast('Image copied — open X below, then paste to attach the collage')
+          }
+        } else if (imageHint === 'save_from_tab') {
+          setBlockedX({
+            url: xUrl,
+            subtitle:
+              'A new tab has your collage — long-press the image to save, then attach it in X.',
+          })
+          showToast('Save the image from the new tab, then open X below')
+        } else {
+          if (openedTab) {
+            showToast('X opened with caption — attach the collage using Download PNG or Photos')
+          } else {
+            setBlockedX({
+              url: xUrl,
+              subtitle: 'Open X below. Save the collage with Download PNG, then attach the photo.',
+            })
+            showToast('Use Download PNG to save the collage, then attach it in X')
+          }
+        }
       }
     } catch (err) {
       console.error(err)
@@ -97,11 +139,9 @@ export default function CollageShareActions({
       if (err instanceof Error && err.name === 'AbortError') {
         return
       }
-      if (!navigator.clipboard?.write && typeof navigator.share !== 'function') {
-        alert('Sharing is not supported here. Use Download PNG and post from your device.')
-        return
-      }
-      alert('Could not prepare post. Try Copy image, then open X manually.')
+      alert(
+        'Could not prepare post. Try Download PNG to save the image, then open X and attach it.',
+      )
     } finally {
       setBusy(null)
     }
@@ -161,24 +201,24 @@ export default function CollageShareActions({
         </button>
       </div>
 
-      {blockedXUrl && (
+      {blockedX && (
         <div
           className="w-full max-w-md rounded-xl border border-[#6FC50E] bg-[#192124] px-4 py-3 text-center text-sm text-[#C9D0C0]"
           role="status"
         >
-          <p className="mb-2 text-[#999A92]">Popup was blocked. Your image is already copied.</p>
+          <p className="mb-2 text-[#999A92]">{blockedX.subtitle}</p>
           <a
-            href={blockedXUrl}
+            href={blockedX.url}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#6FC50E] px-4 py-2 font-semibold text-[#11171A] hover:bg-[#8EFD09]"
-            onClick={() => setBlockedXUrl(null)}
+            onClick={() => setBlockedX(null)}
           >
             Open X with caption
           </a>
           <button
             type="button"
-            onClick={() => setBlockedXUrl(null)}
+            onClick={() => setBlockedX(null)}
             className="mt-2 block w-full text-xs text-[#70736E] hover:text-[#C9D0C0]"
           >
             Dismiss
