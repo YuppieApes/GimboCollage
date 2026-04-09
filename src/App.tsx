@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useOwnership } from './hooks/useOwnership'
 import { useNftSelection } from './hooks/useNftSelection'
+import { useCollectionMetadata } from './hooks/useCollectionMetadata'
+import { filterByTraitCount, sortTokenIds, type SortMode } from './utils/tokenOrdering'
 import WalletInput from './components/WalletInput'
 import NftGrid from './components/NftGrid'
 import CollageBuilder from './components/CollageBuilder'
@@ -9,13 +11,38 @@ type AppView = 'landing' | 'gallery' | 'collage'
 
 export default function App() {
   const { loading, error, getTokensForWallet, getImageUrl } = useOwnership()
+  const { byId, loading: traitsLoading, hasTraits } = useCollectionMetadata()
 
   const [view, setView] = useState<AppView>('landing')
   const [targetWallet, setTargetWallet] = useState<string>('')
   const [walletTokens, setWalletTokens] = useState<number[]>([])
   const [noResults, setNoResults] = useState(false)
+  const [sortMode, setSortMode] = useState<SortMode>('background')
+  const [onlyThreeTraits, setOnlyThreeTraits] = useState(false)
 
-  const selection = useNftSelection(walletTokens)
+  const displayedTokenIds = useMemo(() => {
+    let ids = [...walletTokens]
+    if (onlyThreeTraits && hasTraits && byId) {
+      ids = filterByTraitCount(ids, 3, byId)
+    }
+    return sortTokenIds(ids, sortMode, byId)
+  }, [walletTokens, onlyThreeTraits, sortMode, byId, hasTraits])
+
+  const selection = useNftSelection(displayedTokenIds)
+
+  useEffect(() => {
+    if (!traitsLoading && !hasTraits && (sortMode === 'rarityAsc' || sortMode === 'rarityDesc')) {
+      setSortMode('background')
+    }
+  }, [traitsLoading, hasTraits, sortMode])
+
+  const collageTokenIds = useMemo(() => {
+    if (selection.count > 0) {
+      const picked = displayedTokenIds.filter(id => selection.selected.has(id))
+      if (picked.length > 0) return picked
+    }
+    return displayedTokenIds
+  }, [selection.count, selection.selected, displayedTokenIds])
 
   const handleLookup = (addr: string) => {
     const tokens = getTokensForWallet(addr)
@@ -23,17 +50,21 @@ export default function App() {
     setWalletTokens(tokens)
     setNoResults(tokens.length === 0)
     selection.clearAll()
+    setSortMode('background')
+    setOnlyThreeTraits(false)
     if (tokens.length > 0) {
       setView('gallery')
     }
   }
 
   const handleUseAll = () => {
+    if (displayedTokenIds.length === 0) return
     selection.selectAll()
     setView('collage')
   }
 
   const handleBuildCollage = () => {
+    if (displayedTokenIds.length === 0) return
     if (selection.count === 0) {
       selection.selectAll()
     }
@@ -49,6 +80,8 @@ export default function App() {
     setTargetWallet('')
     setWalletTokens([])
     setNoResults(false)
+    setSortMode('background')
+    setOnlyThreeTraits(false)
     selection.clearAll()
   }
 
@@ -79,13 +112,10 @@ export default function App() {
   }
 
   if (view === 'collage') {
-    const collageTokens = selection.selectedArray.length > 0
-      ? selection.selectedArray
-      : walletTokens
     return (
       <div className="min-h-screen p-4 sm:p-8 max-w-6xl mx-auto">
         <CollageBuilder
-          tokenIds={collageTokens}
+          tokenIds={collageTokenIds}
           getImageUrl={getImageUrl}
           onBack={handleBackToGallery}
         />
@@ -118,10 +148,15 @@ export default function App() {
         </h1>
         <p className="text-[#999A92] mb-6 text-sm">
           {walletTokens.length} Gimboz found (including staked). Select which ones to include in your collage.
+          {displayedTokenIds.length < walletTokens.length && (
+            <span className="block mt-1 text-[#8EFD09]">
+              Showing {displayedTokenIds.length} after filters.
+            </span>
+          )}
         </p>
 
         <NftGrid
-          tokenIds={walletTokens}
+          tokenIds={displayedTokenIds}
           selectedSet={selection.selected}
           onToggle={selection.toggle}
           onSelectAll={handleUseAll}
@@ -129,6 +164,12 @@ export default function App() {
           onBuildCollage={handleBuildCollage}
           getImageUrl={getImageUrl}
           selectedCount={selection.count}
+          sortMode={sortMode}
+          onSortMode={setSortMode}
+          onlyThreeTraits={onlyThreeTraits}
+          onOnlyThreeTraits={setOnlyThreeTraits}
+          traitsLoading={traitsLoading}
+          traitsAvailable={hasTraits}
         />
       </div>
     )

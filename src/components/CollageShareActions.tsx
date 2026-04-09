@@ -5,17 +5,20 @@ import {
   openXIntentPlaceholderTab,
   preferNativeShareForX,
   preparePostOnX,
+  type CollagePngOptions,
   X_COLLAGE_CAPTION,
 } from '../utils/collagePng'
 
 interface Props {
   targetRef: RefObject<HTMLDivElement | null>
   filename?: string
+  pngOptions?: CollagePngOptions
 }
 
 export default function CollageShareActions({
   targetRef,
   filename = 'gimboz-collage',
+  pngOptions,
 }: Props) {
   const [busy, setBusy] = useState<'download' | 'copy' | 'x' | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -30,7 +33,7 @@ export default function CollageShareActions({
     if (!targetRef.current) return
     setBusy('download')
     try {
-      const dataUrl = URL.createObjectURL(await collageToPngBlob(targetRef.current))
+      const dataUrl = URL.createObjectURL(await collageToPngBlob(targetRef.current, pngOptions))
       const link = document.createElement('a')
       link.download = `${filename}.png`
       link.href = dataUrl
@@ -53,7 +56,7 @@ export default function CollageShareActions({
     }
     setBusy('copy')
     try {
-      await copyCollageImageToClipboard(targetRef.current)
+      await copyCollageImageToClipboard(targetRef.current, pngOptions)
       showToast('Collage copied')
     } catch (err) {
       console.error(err)
@@ -73,7 +76,7 @@ export default function CollageShareActions({
 
     setBusy('x')
     try {
-      const result = await preparePostOnX(el, X_COLLAGE_CAPTION, { placeholderTab })
+      const result = await preparePostOnX(el, X_COLLAGE_CAPTION, { placeholderTab, pngOptions })
       if (result.kind === 'shared') {
         showToast('Pick X in the share sheet — image and caption go together')
       } else if (result.openedTab) {

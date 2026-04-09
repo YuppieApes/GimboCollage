@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import LayoutPicker, { type LayoutType, getGridConfig } from './LayoutPicker'
+import LayoutPicker, { type LayoutType, getPreviewAspect } from './LayoutPicker'
 import CollagePreview from './CollagePreview'
 import CollageShareActions from './CollageShareActions'
 
@@ -8,13 +8,10 @@ const BG_PRESETS = [
   '#11171A',
   '#000000',
   '#192124',
-  '#252B2E',
-  '#31392C',
-  '#495151',
   '#ffffff',
-  '#8EFD09',
+  '#0054FA',
   '#6FC50E',
-  '#C9D0C0',
+  '#8EFD09',
 ]
 
 function normalizeHex6(input: string): string | null {
@@ -23,6 +20,8 @@ function normalizeHex6(input: string): string | null {
   return m ? `#${m[1].toLowerCase()}` : null
 }
 
+type BuilderMode = 'collage' | 'social'
+
 interface Props {
   tokenIds: number[]
   getImageUrl: (tokenId: number) => string
@@ -30,6 +29,8 @@ interface Props {
 }
 
 export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props) {
+  const [builderMode, setBuilderMode] = useState<BuilderMode>('collage')
+
   const [layout, setLayout] = useState<LayoutType>(() => {
     const n = tokenIds.length
     if (n <= 4) return 'grid-2x2'
@@ -43,7 +44,11 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
   const [showIds, setShowIds] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
-  const previewRef = useRef<HTMLDivElement>(null)
+  const collageRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setLightboxOpen(false)
+  }, [builderMode])
 
   useEffect(() => {
     setHexDraft(bgColor)
@@ -70,9 +75,7 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
   }
 
   const handleHexKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur()
-    }
+    if (e.key === 'Enter') e.currentTarget.blur()
   }
 
   const previewProps = {
@@ -84,11 +87,11 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
     showIds,
   }
 
-  const { cols: fullCols, rows: fullRows } = getGridConfig(layout, tokenIds.length)
+  const { w: aspectW, h: aspectH } = getPreviewAspect(layout, tokenIds.length)
 
   return (
     <div className="w-full animate-fade-in">
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <button
           type="button"
           onClick={onBack}
@@ -108,129 +111,174 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
         </h2>
       </div>
 
-      <div className="bg-[#192124] rounded-2xl p-5 mb-6 space-y-4">
-        <div>
-          <label className="block text-xs font-medium text-[#999A92] mb-2 uppercase tracking-wider">
-            Layout
-          </label>
-          <LayoutPicker value={layout} onChange={setLayout} count={tokenIds.length} />
-        </div>
+      <div className="flex flex-wrap gap-2 mb-6 p-1 rounded-xl bg-[#192124] border border-[#31392C] w-fit max-w-full">
+        <button
+          type="button"
+          onClick={() => setBuilderMode('collage')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+            ${builderMode === 'collage'
+              ? 'bg-[#6FC50E] text-[#11171A]'
+              : 'text-[#999A92] hover:text-[#C9D0C0]'
+            }`}
+        >
+          Collage
+        </button>
+        <button
+          type="button"
+          onClick={() => setBuilderMode('social')}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+            ${builderMode === 'social'
+              ? 'bg-[#6FC50E] text-[#11171A]'
+              : 'text-[#999A92] hover:text-[#C9D0C0]'
+            }`}
+        >
+          Banners &amp; wallpapers
+        </button>
+      </div>
 
-        <div className="flex flex-wrap gap-6 items-end">
+      {builderMode === 'collage' && (
+        <div className="bg-[#192124] rounded-2xl p-5 mb-6 space-y-4">
           <div>
             <label className="block text-xs font-medium text-[#999A92] mb-2 uppercase tracking-wider">
-              Gap
+              Layout
             </label>
-            <input
-              type="range"
-              min={0}
-              max={16}
-              value={gap}
-              onChange={e => setGap(Number(e.target.value))}
-              className="w-32 accent-[#8EFD09]"
-            />
-            <span className="ml-2 text-xs text-[#999A92]">{gap}px</span>
+            <LayoutPicker value={layout} onChange={setLayout} count={tokenIds.length} />
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer pb-1">
-            <input
-              type="checkbox"
-              checked={showIds}
-              onChange={e => setShowIds(e.target.checked)}
-              className="w-4 h-4 rounded accent-[#8EFD09]"
-            />
-            <span className="text-sm text-[#C9D0C0]">Show Token IDs</span>
-          </label>
-        </div>
-
-        <div className="pt-2 border-t border-[#31392C]">
-          <label className="block text-xs font-medium text-[#999A92] mb-3 uppercase tracking-wider">
-            Collage background color
-          </label>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-wrap gap-2">
-              {BG_PRESETS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  title={c}
-                  onClick={() => setBgColor(c)}
-                  className={`w-9 h-9 rounded-lg border-2 transition-all shrink-0
-                    ${bgColor.toLowerCase() === c.toLowerCase()
-                      ? 'border-[#8EFD09] scale-110 ring-2 ring-[#8EFD09]/30'
-                      : 'border-[#495151] hover:border-[#70736E]'
-                    }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-[#999A92]">
-                <span className="sr-only">Pick a color</span>
-                <input
-                  type="color"
-                  value={/^#[0-9A-Fa-f]{6}$/i.test(bgColor) ? bgColor : '#11171a'}
-                  onChange={e => setBgColor(e.target.value)}
-                  className="w-12 h-12 rounded-xl cursor-pointer border-2 border-[#495151] bg-[#252B2E] p-0.5"
-                  aria-label="Color picker"
-                />
-                <span className="hidden sm:inline text-[#70736E]">Picker</span>
+          <div className="flex flex-wrap gap-6 items-end">
+            <div>
+              <label className="block text-xs font-medium text-[#999A92] mb-2 uppercase tracking-wider">
+                Gap
               </label>
-              <div className="flex items-center gap-2">
-                <label htmlFor="collage-hex" className="text-xs text-[#70736E] whitespace-nowrap">
-                  Hex
+              <input
+                type="range"
+                min={0}
+                max={16}
+                value={gap}
+                onChange={e => setGap(Number(e.target.value))}
+                className="w-32 accent-[#8EFD09]"
+              />
+              <span className="ml-2 text-xs text-[#999A92]">{gap}px</span>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer pb-1">
+              <input
+                type="checkbox"
+                checked={showIds}
+                onChange={e => setShowIds(e.target.checked)}
+                className="w-4 h-4 rounded accent-[#8EFD09]"
+              />
+              <span className="text-sm text-[#C9D0C0]">Show Token IDs</span>
+            </label>
+          </div>
+
+          <div className="pt-2 border-t border-[#31392C]">
+            <label className="block text-xs font-medium text-[#999A92] mb-3 uppercase tracking-wider">
+              Collage background color
+            </label>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap gap-2">
+                {BG_PRESETS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    title={c}
+                    onClick={() => setBgColor(c)}
+                    className={`w-9 h-9 rounded-lg border-2 transition-all shrink-0
+                      ${bgColor.toLowerCase() === c.toLowerCase()
+                        ? 'border-[#8EFD09] scale-110 ring-2 ring-[#8EFD09]/30'
+                        : 'border-[#495151] hover:border-[#70736E]'
+                      }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-[#999A92]">
+                  <span className="sr-only">Pick a color</span>
+                  <input
+                    type="color"
+                    value={/^#[0-9A-Fa-f]{6}$/i.test(bgColor) ? bgColor : '#11171a'}
+                    onChange={e => setBgColor(e.target.value)}
+                    className="w-12 h-12 rounded-xl cursor-pointer border-2 border-[#495151] bg-[#252B2E] p-0.5"
+                    aria-label="Color picker"
+                  />
+                  <span className="hidden sm:inline text-[#70736E]">Picker</span>
                 </label>
-                <input
-                  id="collage-hex"
-                  type="text"
-                  value={hexDraft}
-                  onChange={e => setHexDraft(e.target.value)}
-                  onBlur={handleHexBlur}
-                  onKeyDown={handleHexKeyDown}
-                  placeholder="#11171A"
-                  spellCheck={false}
-                  maxLength={7}
-                  className="w-[7.5rem] px-3 py-2 rounded-lg bg-[#252B2E] border border-[#495151]
-                             text-[#C9D0C0] font-mono text-sm placeholder-[#70736E]
-                             focus:outline-none focus:border-[#8EFD09] focus:ring-1 focus:ring-[#8EFD09]"
-                />
+                <div className="flex items-center gap-2">
+                  <label htmlFor="collage-hex" className="text-xs text-[#70736E] whitespace-nowrap">
+                    Hex
+                  </label>
+                  <input
+                    id="collage-hex"
+                    type="text"
+                    value={hexDraft}
+                    onChange={e => setHexDraft(e.target.value)}
+                    onBlur={handleHexBlur}
+                    onKeyDown={handleHexKeyDown}
+                    placeholder="#11171A"
+                    spellCheck={false}
+                    maxLength={7}
+                    className="w-[7.5rem] px-3 py-2 rounded-lg bg-[#252B2E] border border-[#495151]
+                               text-[#C9D0C0] font-mono text-sm placeholder-[#70736E]
+                               focus:outline-none focus:border-[#8EFD09] focus:ring-1 focus:ring-[#8EFD09]"
+                  />
+                </div>
               </div>
             </div>
+            <p className="text-xs text-[#70736E] mt-3">
+              Tap a swatch, use the color wheel, or type a hex code (e.g. <code className="text-[#999A92]">#192124</code>).
+            </p>
           </div>
-          <p className="text-xs text-[#70736E] mt-3">
-            Tap a swatch, use the color wheel, or type a hex code (e.g. <code className="text-[#999A92]">#192124</code>).
+        </div>
+      )}
+
+      {builderMode === 'social' && (
+        <div
+          className="bg-[#192124] rounded-2xl border border-[#31392C] p-12 sm:p-16 mb-6 flex flex-col items-center justify-center text-center min-h-[200px]"
+          role="status"
+        >
+          <p className="text-2xl sm:text-3xl font-bold text-[#8EFD09] tracking-tight">
+            Coming soon
+          </p>
+          <p className="text-sm text-[#70736E] mt-3 max-w-sm">
+            Banners, wallpapers, and social sizes will be available here later.
           </p>
         </div>
-      </div>
+      )}
 
-      <div className="bg-[#192124] rounded-2xl p-4 mb-6">
-        <p className="text-center text-xs text-[#70736E] mb-3">Click preview to view full size</p>
-        <div className="max-w-3xl mx-auto">
-          <div
-            role="button"
-            tabIndex={0}
-            className="relative rounded-xl overflow-hidden cursor-zoom-in outline-none
-                       ring-2 ring-transparent hover:ring-[#6FC50E] focus-visible:ring-[#8EFD09] transition-shadow"
-            onClick={() => setLightboxOpen(true)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                setLightboxOpen(true)
-              }
-            }}
-            aria-label="Open collage preview full screen"
-          >
-            <CollagePreview ref={previewRef} {...previewProps} />
+      {builderMode === 'collage' && (
+        <div className="bg-[#192124] rounded-2xl p-4 mb-6">
+          <p className="text-center text-xs text-[#70736E] mb-3">Click preview to view full size</p>
+          <div className="max-w-3xl mx-auto">
+            <div
+              role="button"
+              tabIndex={0}
+              className="relative rounded-xl overflow-hidden cursor-zoom-in outline-none
+                         ring-2 ring-transparent hover:ring-[#6FC50E] focus-visible:ring-[#8EFD09] transition-shadow"
+              onClick={() => setLightboxOpen(true)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setLightboxOpen(true)
+                }
+              }}
+              aria-label="Open collage preview full screen"
+            >
+              <CollagePreview ref={collageRef} {...previewProps} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <CollageShareActions
-        targetRef={previewRef}
-        filename={`gimboz-collage-${tokenIds.length}`}
-      />
+      {builderMode === 'collage' && (
+        <CollageShareActions
+          targetRef={collageRef}
+          filename={`gimboz-collage-${tokenIds.length}`}
+        />
+      )}
 
-      {lightboxOpen &&
+      {lightboxOpen && builderMode === 'collage' &&
         createPortal(
           <div
             className="lightbox-backdrop fixed inset-0 z-[9999] flex flex-col bg-[#11171A] h-[100dvh] w-full max-w-none"
@@ -263,8 +311,8 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
               <div
                 className="lightbox-content rounded-2xl overflow-hidden shadow-2xl ring-2 ring-[#6FC50E]/40"
                 style={{
-                  aspectRatio: `${fullCols} / ${fullRows}`,
-                  width: `min(calc(100vw - 1.5rem), calc((100dvh - 7rem) * ${fullCols} / ${fullRows}))`,
+                  aspectRatio: `${aspectW} / ${aspectH}`,
+                  width: `min(calc(100vw - 1.5rem), calc((100dvh - 7rem) * ${aspectW} / ${aspectH}))`,
                   maxHeight: 'calc(100dvh - 7rem)',
                 }}
               >
@@ -272,7 +320,7 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
               </div>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </div>
   )

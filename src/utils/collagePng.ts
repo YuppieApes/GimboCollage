@@ -1,13 +1,39 @@
 import { toPng } from 'html-to-image'
 
-const PNG_OPTS = {
+const DEFAULT_PNG_OPTS = {
   quality: 1,
   pixelRatio: 2,
   cacheBust: true,
 } as const
 
-export async function collageToPngBlob(node: HTMLElement): Promise<Blob> {
-  const dataUrl = await toPng(node, PNG_OPTS)
+export type CollagePngOptions = {
+  /** Default 2 for on-screen collage preview export; use 1 when the node is already full output pixels. */
+  pixelRatio?: number
+  /** Optional override passed to html-to-image when you want explicit output dimensions. */
+  width?: number
+  height?: number
+  /** PNG with alpha; html-to-image clears the root background. */
+  transparentBackground?: boolean
+}
+
+export async function collageToPngBlob(
+  node: HTMLElement,
+  options?: CollagePngOptions,
+): Promise<Blob> {
+  const {
+    pixelRatio = DEFAULT_PNG_OPTS.pixelRatio,
+    width,
+    height,
+    transparentBackground,
+  } = options ?? {}
+  const dataUrl = await toPng(node, {
+    ...DEFAULT_PNG_OPTS,
+    pixelRatio,
+    ...(width != null && height != null ? { width, height } : {}),
+    ...(transparentBackground
+      ? { backgroundColor: 'rgba(0,0,0,0)' as const }
+      : {}),
+  })
   const res = await fetch(dataUrl)
   return res.blob()
 }
@@ -21,11 +47,15 @@ export async function copyImageBlobToClipboard(blob: Blob): Promise<void> {
 export function preferNativeShareForX(): boolean {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent
-  return /Android|iPhone|iPad|iPod/i.test(ua) || navigator.userAgentData?.mobile === true
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData
+  return /Android|iPhone|iPad|iPod/i.test(ua) || uaData?.mobile === true
 }
 
-export async function copyCollageImageToClipboard(node: HTMLElement): Promise<void> {
-  await copyImageBlobToClipboard(await collageToPngBlob(node))
+export async function copyCollageImageToClipboard(
+  node: HTMLElement,
+  pngOptions?: CollagePngOptions,
+): Promise<void> {
+  await copyImageBlobToClipboard(await collageToPngBlob(node, pngOptions))
 }
 
 export function twitterIntentTweetUrl(text: string): string {
@@ -69,6 +99,7 @@ export type PreparePostOnXResult =
 export type PreparePostOnXOptions = {
   /** Tab from openXIntentPlaceholderTab(); navigated to X after copy (avoids popup block). */
   placeholderTab?: Window | null
+  pngOptions?: CollagePngOptions
 }
 
 /**
@@ -80,8 +111,8 @@ export async function preparePostOnX(
   caption: string,
   options: PreparePostOnXOptions = {},
 ): Promise<PreparePostOnXResult> {
-  const { placeholderTab = null } = options
-  const blob = await collageToPngBlob(node)
+  const { placeholderTab = null, pngOptions } = options
+  const blob = await collageToPngBlob(node, pngOptions)
   const mime = blob.type && blob.type !== 'application/octet-stream' ? blob.type : 'image/png'
   const file = new File([blob], 'gimboz-collage.png', { type: mime })
 

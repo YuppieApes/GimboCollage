@@ -1,7 +1,18 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export function useNftSelection(availableTokens: number[]) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    const allowed = new Set(availableTokens)
+    setSelected(prev => {
+      const next = new Set<number>()
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id)
+      }
+      return next
+    })
+  }, [availableTokens])
 
   const toggle = useCallback((tokenId: number) => {
     setSelected(prev => {

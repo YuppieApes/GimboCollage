@@ -1,4 +1,8 @@
-export type LayoutType = 'grid-2x2' | 'grid-3x3' | 'grid-4x4' | 'grid-auto'
+export type LayoutType =
+  | 'grid-2x2'
+  | 'grid-3x3'
+  | 'grid-4x4'
+  | 'grid-auto'
 
 interface Props {
   value: LayoutType
@@ -54,4 +58,11 @@ export function getGridConfig(layout: LayoutType, count: number) {
       return { cols, rows }
     }
   }
+}
+
+/** Width / height ratio for lightbox `aspect-ratio` (uniform cell grids). */
+export function getPreviewAspect(layout: LayoutType, count: number): { w: number; h: number } {
+  if (count < 1) return { w: 1, h: 1 }
+  const { cols, rows } = getGridConfig(layout, count)
+  return { w: cols, h: rows }
 }

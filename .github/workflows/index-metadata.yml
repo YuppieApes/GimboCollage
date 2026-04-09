@@ -1,0 +1,49 @@
+name: Index Gimboz ownership and metadata
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: gimboz-index-metadata
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run index
+
+      - run: npm run build-metadata
+
+      - name: Commit and push if changed
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/ownership.json public/images.json public/gimboz-metadata.json
+          if git diff --staged --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No JSON changes to commit."
+          else
+            git commit -m "chore: refresh gimboz ownership and metadata"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger Vercel deploy hook
+        if: steps.commit.outputs.changed == 'true' && secrets.VERCEL_DEPLOY_HOOK_URL != ''
+        run: curl -fsS -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}"

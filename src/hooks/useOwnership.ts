@@ -7,6 +7,8 @@ interface OwnershipData {
 const IMAGE_BASE = 'https://storage.googleapis.com/gimboz-public/AjhoiwlksdnERUB/3d/pfp/'
 const IMAGE_EXT = '.png'
 
+const REFETCH_MS = 30 * 60 * 1000
+
 let ownershipCache: OwnershipData | null = null
 
 export function useOwnership() {
@@ -15,34 +17,51 @@ export function useOwnership() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (ownershipCache) {
-      setOwnership(ownershipCache)
-      setLoading(false)
-      return
-    }
-
     let cancelled = false
 
-    async function load() {
+    async function load(initial: boolean) {
       try {
-        const res = await fetch('/ownership.json')
+        const res = await fetch(`/ownership.json?t=${Date.now()}`, { cache: 'no-store' })
         if (!res.ok) throw new Error('Failed to load ownership data')
         const data: OwnershipData = await res.json()
         ownershipCache = data
         if (!cancelled) {
           setOwnership(data)
-          setLoading(false)
+          setError(null)
+          if (initial) setLoading(false)
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!cancelled) {
-          setError(err.message)
-          setLoading(false)
+          if (initial && !ownershipCache) {
+            setError(err instanceof Error ? err.message : 'Failed to load ownership')
+          }
+          if (initial) setLoading(false)
         }
       }
     }
 
-    load()
-    return () => { cancelled = true }
+    const hadCache = ownershipCache != null
+    if (hadCache) {
+      setOwnership(ownershipCache)
+      setLoading(false)
+    }
+
+    void load(!hadCache)
+
+    const intervalId = window.setInterval(() => {
+      void load(false)
+    }, REFETCH_MS)
+
+    const onFocus = () => {
+      void load(false)
+    }
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   const getTokensForWallet = useCallback((address: string): number[] => {
