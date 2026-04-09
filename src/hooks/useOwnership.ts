@@ -7,7 +7,8 @@ interface OwnershipData {
 const IMAGE_BASE = 'https://storage.googleapis.com/gimboz-public/AjhoiwlksdnERUB/3d/pfp/'
 const IMAGE_EXT = '.png'
 
-const REFETCH_MS = 30 * 60 * 1000
+/** Poll ownership.json so deploys / CI updates show up without a full reload. */
+const REFETCH_MS = 3 * 60 * 1000
 
 let ownershipCache: OwnershipData | null = null
 
@@ -52,15 +53,36 @@ export function useOwnership() {
       void load(false)
     }, REFETCH_MS)
 
-    const onFocus = () => {
+    const refetch = () => {
       void load(false)
     }
+
+    const onFocus = () => {
+      refetch()
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refetch()
+      }
+    }
+
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        refetch()
+      }
+    }
+
     window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pageshow', onPageShow)
 
     return () => {
       cancelled = true
       window.clearInterval(intervalId)
       window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pageshow', onPageShow)
     }
   }, [])
 
