@@ -71,7 +71,15 @@ function GimbozModel({ url }: { url: string }) {
   )
 }
 
-export default function Gimboz3DViewer() {
+interface Gimboz3DViewerProps {
+  walletTokenIds?: number[]
+  getImageUrl?: (tokenId: number) => string
+}
+
+export default function Gimboz3DViewer({
+  walletTokenIds = [],
+  getImageUrl,
+}: Gimboz3DViewerProps) {
   const { byId, error: metaError } = useCollectionMetadata()
   const glbBase = useMemo(() => inferGlbBaseFromById(byId), [byId])
 
@@ -88,39 +96,86 @@ export default function Gimboz3DViewer() {
     }
   }, [glbUrl])
 
+  const loadTokenId = useCallback(
+    (n: number) => {
+      setActionError(null)
+      setModelError(null)
+      if (!Number.isFinite(n) || n < 1 || n > GIMBOZ_SUPPLY) {
+        setActionError(`Enter a Gimboz ID between 1 and ${GIMBOZ_SUPPLY}.`)
+        return false
+      }
+      const url = glbUrlForToken(glbBase, n)
+      setIdDraft(String(n))
+      setGlbUrl(prev => {
+        if (prev) revokeModelUrl(prev)
+        return url
+      })
+      setLoadedId(String(n))
+      setSceneKey(k => k + 1)
+      return true
+    },
+    [glbBase],
+  )
+
   const loadById = useCallback(() => {
-    setActionError(null)
-    setModelError(null)
     const n = Number.parseInt(idDraft.trim(), 10)
     if (!Number.isFinite(n) || n < 1 || n > GIMBOZ_SUPPLY) {
       setActionError(`Enter a Gimboz ID between 1 and ${GIMBOZ_SUPPLY}.`)
+      setModelError(null)
       return
     }
-    const url = glbUrlForToken(glbBase, n)
-    setGlbUrl(prev => {
-      if (prev) revokeModelUrl(prev)
-      return url
-    })
-    setLoadedId(String(n))
-    setSceneKey(k => k + 1)
-  }, [glbBase, idDraft])
+    loadTokenId(n)
+  }, [idDraft, loadTokenId])
 
   const loadRandom = useCallback(() => {
-    setActionError(null)
-    setModelError(null)
     const pick = 1 + Math.floor(Math.random() * GIMBOZ_SUPPLY)
-    const url = glbUrlForToken(glbBase, pick)
-    setIdDraft(String(pick))
-    setGlbUrl(prev => {
-      if (prev) revokeModelUrl(prev)
-      return url
-    })
-    setLoadedId(String(pick))
-    setSceneKey(k => k + 1)
-  }, [glbBase])
+    loadTokenId(pick)
+  }, [loadTokenId])
+
+  const showWalletStrip = walletTokenIds.length > 0 && getImageUrl
 
   return (
     <div className="space-y-4">
+      {showWalletStrip && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#5c6568] mb-2">
+            Your Gimboz
+          </p>
+          <div
+            className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] -mx-1 px-1"
+            role="list"
+            aria-label="Gimboz in wallet"
+          >
+            {walletTokenIds.map(id => {
+              const active = loadedId === String(id)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="listitem"
+                  onClick={() => loadTokenId(id)}
+                  aria-label={`View Gimboz ${id} in 3D`}
+                  aria-pressed={active}
+                  className={`shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden ring-2 transition-all
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8EFD09]
+                    ${active
+                      ? 'ring-[#8EFD09] ring-offset-2 ring-offset-[#161C1F]'
+                      : 'ring-[#2a3236] hover:ring-[#6FC50E]/60'
+                    }`}
+                >
+                  <img
+                    src={getImageUrl!(id)}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-[#70736E]">
           <span className="font-semibold uppercase tracking-wider text-[#5c6568]">Gimboz ID</span>

@@ -12,4 +12,6 @@ export type StickerLayer = {
   rotation: number
   scaleX: number
   scaleY: number
+  /** Banner autofill: clip to this cell so cover-scaled images do not overlap neighbors. */
+  tile?: { x: number; y: number; width: number; height: number }
 }

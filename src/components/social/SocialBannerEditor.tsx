@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Image as KonvaImage, Layer, Rect, Stage, Transformer } from 'react-konva'
+import { createPortal, flushSync } from 'react-dom'
+import { Group, Image as KonvaImage, Layer, Rect, Stage, Transformer } from 'react-konva'
 import Konva from 'konva'
 import { CANVAS_PRESETS, type CanvasPreset } from './canvasPresets'
 import type { StickerLayer } from './socialTypes'
 import { exportStageToPngBlob } from './stageToBlob'
 import { copyImageBlobToClipboard, savePngBlob } from '../../utils/collagePng'
 import CutoutEraserCanvas from '../CutoutEraserCanvas'
+import { COLLAGE_BG_PRESETS } from '../../constants/collageBgPresets'
 
 async function fetchImageBlobFromUrl(url: string): Promise<Blob> {
   const res = await fetch(url, { mode: 'cors' })
@@ -114,6 +115,71 @@ function createStickerFromImage(
   }
 }
 
+type LoadedStickerImage = {
+  tokenId: number
+  imageUrl: string
+  img: HTMLImageElement
+}
+
+function loadStickerImage(
+  tokenId: number,
+  urlForToken: (id: number) => string,
+): Promise<LoadedStickerImage> {
+  return new Promise((resolve, reject) => {
+    const imageUrl = urlForToken(tokenId)
+    const img = new window.Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve({ tokenId, imageUrl, img })
+    img.onerror = () => reject(new Error(`Could not load #${tokenId}`))
+    img.src = imageUrl
+  })
+}
+
+function layoutStickersGrid(
+  loaded: LoadedStickerImage[],
+  cw: number,
+  ch: number,
+  gapPx: number,
+): StickerLayer[] {
+  const n = loaded.length
+  if (n === 0) return []
+  const g = Math.max(0, gapPx)
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * (cw / ch))))
+  const rows = Math.ceil(n / cols)
+  const innerW = cw - g * (cols + 1)
+  const innerH = ch - g * (rows + 1)
+  const cellW = Math.max(1, innerW / cols)
+  const cellH = Math.max(1, innerH / rows)
+
+  return loaded.map((e, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const cellLeft = g + col * (cellW + g)
+    const cellTop = g + row * (cellH + g)
+    const nw = e.img.naturalWidth || e.img.width
+    const nh = e.img.naturalHeight || e.img.height
+    const scale = Math.max(cellW / nw, cellH / nh)
+    const width = nw * scale
+    const height = nh * scale
+    const x = cellLeft + (cellW - width) / 2
+    const y = cellTop + (cellH - height) / 2
+    return {
+      id: newStickerId(),
+      tokenId: e.tokenId,
+      imageUrl: e.imageUrl,
+      sourceImageUrl: e.imageUrl,
+      x,
+      y,
+      width,
+      height,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      tile: { x: cellLeft, y: cellTop, width: cellW, height: cellH },
+    }
+  })
+}
+
 interface Props {
   tokenIds: number[]
   getImageUrl: (tokenId: number) => string
@@ -135,6 +201,10 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
   const [eraserForId, setEraserForId] = useState<string | null>(null)
   const [eraserBlob, setEraserBlob] = useState<Blob | null>(null)
   const [eraserBlobError, setEraserBlobError] = useState<string | null>(null)
+  const [autofillBusy, setAutofillBusy] = useState(false)
+  const [bannerGridGap, setBannerGridGap] = useState(0)
+
+  const lastAutofillSnapRef = useRef<LoadedStickerImage[] | null>(null)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -160,6 +230,7 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
 
   /** Changing canvas size would misalign layers; reset stickers + custom bg for a predictable state. */
   const handlePresetChange = (p: CanvasPreset) => {
+    lastAutofillSnapRef.current = null
     setStickers(prev => {
       for (const s of prev) revokeBlobUrl(s.imageUrl)
       return []
@@ -190,6 +261,18 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
   const cw = preset.width
   const ch = preset.height
 
+  useEffect(() => {
+    const snap = lastAutofillSnapRef.current
+    if (!snap?.length) return
+    setStickers(prev => {
+      if (prev.length !== snap.length) return prev
+      if (!prev.every((s, i) => s.tile && s.tokenId === snap[i]!.tokenId)) return prev
+      if (prev.some(s => s.imageUrl.startsWith('blob:'))) return prev
+      return layoutStickersGrid(snap, cw, ch, bannerGridGap)
+    })
+    setSelectedId(null)
+  }, [bannerGridGap, cw, ch])
+
   const updateSticker = useCallback((id: string, patch: Partial<StickerLayer>) => {
     setStickers(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)))
   }, [])
@@ -201,6 +284,7 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
       const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => {
+        lastAutofillSnapRef.current = null
         setStickers(prev => [
           ...prev,
           createStickerFromImage(tokenId, imageUrl, img, cw, ch),
@@ -215,8 +299,35 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
     [getImageUrl, cw, ch],
   )
 
+  const autofillBanner = useCallback(() => {
+    if (tokenIds.length === 0 || busy !== null) return
+    setAutofillBusy(true)
+    setLoadError(null)
+    void (async () => {
+      try {
+        const loaded = await Promise.all(tokenIds.map(id => loadStickerImage(id, getImageUrl)))
+        lastAutofillSnapRef.current = loaded
+        setStickers(prev => {
+          for (const s of prev) revokeBlobUrl(s.imageUrl)
+          return layoutStickersGrid(loaded, cw, ch, bannerGridGap)
+        })
+        setSelectedId(null)
+        showToast(`Placed ${loaded.length} Gimboz on banner`)
+      } catch (err) {
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : 'Could not load one or more images (CORS or network).',
+        )
+      } finally {
+        setAutofillBusy(false)
+      }
+    })()
+  }, [tokenIds, getImageUrl, cw, ch, bannerGridGap, busy, showToast])
+
   const deleteSelected = () => {
     if (!selectedId) return
+    lastAutofillSnapRef.current = null
     setStickers(s => {
       const victim = s.find(x => x.id === selectedId)
       if (victim) revokeBlobUrl(victim.imageUrl)
@@ -246,7 +357,9 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
         imageUrl,
         x: s.x + 24,
         y: s.y + 24,
+        tile: undefined,
       }
+      lastAutofillSnapRef.current = null
       setStickers(prev => [...prev, copy])
       setSelectedId(copy.id)
     })()
@@ -268,6 +381,7 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
           output: { format: 'image/png', type: 'foreground' },
         })
         const newUrl = URL.createObjectURL(blob)
+        lastAutofillSnapRef.current = null
         setStickers(prev =>
           prev.map(x => {
             if (x.id !== targetId) return x
@@ -342,6 +456,7 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
     (blob: Blob) => {
       const id = eraserForId
       if (!id) return
+      lastAutofillSnapRef.current = null
       setStickers(prev =>
         prev.map(s => {
           if (s.id !== id) return s
@@ -530,30 +645,69 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px] gap-5">
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="inline-flex items-center gap-2 rounded-xl bg-[#1a2226] px-3 py-2 ring-1 ring-[#2a3236]">
-              <span className="text-[10px] uppercase tracking-wider text-[#6d7679]">BG</span>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-xl bg-[#1a2226] px-3 py-2 ring-1 ring-[#2a3236]">
+                <span className="text-[10px] uppercase tracking-wider text-[#6d7679]">BG</span>
+                <input
+                  type="color"
+                  value={/^#[0-9A-Fa-f]{6}$/i.test(bgColor) ? bgColor : '#11171a'}
+                  onChange={e => setBgColor(e.target.value)}
+                  className="h-8 w-10 cursor-pointer rounded-md border-0 bg-transparent p-0"
+                  aria-label="Background color"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="hidden sm:inline text-[10px] uppercase tracking-wider text-[#6d7679]">
+                  Presets
+                </span>
+                {COLLAGE_BG_PRESETS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    title={c}
+                    onClick={() => setBgColor(c)}
+                    className={`w-8 h-8 rounded-lg border-2 transition-all shrink-0
+                      ${bgColor.toLowerCase() === c.toLowerCase()
+                        ? 'border-[#8EFD09] scale-110 ring-2 ring-[#8EFD09]/30'
+                        : 'border-[#495151] hover:border-[#70736E]'
+                      }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <label className="rounded-xl bg-[#252B2E] px-4 py-2 text-xs font-semibold text-[#C9D0C0] ring-1 ring-[#3d474c] hover:ring-[#6FC50E]/40 cursor-pointer transition-all">
+                <input type="file" accept="image/*" className="sr-only" onChange={handleBgFile} />
+                BG image
+              </label>
+              {bgFileUrl && (
+                <button
+                  type="button"
+                  onClick={clearBgImage}
+                  className="text-xs text-[#70736E] hover:text-[#C9D0C0]"
+                >
+                  Clear BG image
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-[#1a2226] px-3 py-2 ring-1 ring-[#2a3236] max-w-full">
+              <label htmlFor="banner-grid-gap" className="text-[10px] font-semibold uppercase tracking-wider text-[#6d7679] shrink-0">
+                Autofill gap
+              </label>
               <input
-                type="color"
-                value={/^#[0-9A-Fa-f]{6}$/i.test(bgColor) ? bgColor : '#11171a'}
-                onChange={e => setBgColor(e.target.value)}
-                className="h-8 w-10 cursor-pointer rounded-md border-0 bg-transparent p-0"
-                aria-label="Background color"
+                id="banner-grid-gap"
+                type="range"
+                min={0}
+                max={48}
+                value={bannerGridGap}
+                onChange={e => setBannerGridGap(Number(e.target.value))}
+                className="w-32 sm:w-40 accent-[#8EFD09]"
               />
-            </label>
-            <label className="rounded-xl bg-[#252B2E] px-4 py-2 text-xs font-semibold text-[#C9D0C0] ring-1 ring-[#3d474c] hover:ring-[#6FC50E]/40 cursor-pointer transition-all">
-              <input type="file" accept="image/*" className="sr-only" onChange={handleBgFile} />
-              BG image
-            </label>
-            {bgFileUrl && (
-              <button
-                type="button"
-                onClick={clearBgImage}
-                className="text-xs text-[#70736E] hover:text-[#C9D0C0]"
-              >
-                Clear BG image
-              </button>
-            )}
+              <span className="text-xs text-[#999A92] tabular-nums w-10">{bannerGridGap}px</span>
+              <p className="text-[10px] text-[#5c6568] leading-snug min-w-0 flex-1 basis-full sm:basis-auto">
+                Spacing for new autofill; moving the slider also re-grids the last autofill (until you edit stickers).
+              </p>
+            </div>
           </div>
 
           {loadError && (
@@ -673,6 +827,18 @@ export default function SocialBannerEditor({ tokenIds, getImageUrl }: Props) {
         </div>
 
         <div className="space-y-3 xl:sticky xl:top-4 xl:self-start">
+          <button
+            type="button"
+            disabled={tokenIds.length === 0 || busy !== null || autofillBusy}
+            onClick={() => autofillBanner()}
+            className="w-full rounded-xl bg-[#252B2E] px-4 py-3 text-sm font-semibold text-[#C9D0C0] ring-1 ring-[#3d474c]
+                       hover:ring-[#6FC50E]/50 disabled:opacity-40 inline-flex items-center justify-center gap-2"
+          >
+            {autofillBusy ? (
+              <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
+            ) : null}
+            Autofill banner
+          </button>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#5c6568]">Add Gimboz</p>
           {tokenIds.length === 0 ? (
             <p className="text-xs text-[#70736E]">No Gimboz in this build. Go back and pick a wallet.</p>
@@ -842,13 +1008,17 @@ function StickerImage({
   const img = useCrossOriginImage(sticker.imageUrl)
   if (!img) return null
 
-  return (
+  const tile = sticker.tile
+  const ix = tile ? sticker.x - tile.x : sticker.x
+  const iy = tile ? sticker.y - tile.y : sticker.y
+
+  const imageNode = (
     <KonvaImage
       ref={shapeRef}
       name={`sticker-${sticker.id}`}
       image={img}
-      x={sticker.x}
-      y={sticker.y}
+      x={ix}
+      y={iy}
       width={sticker.width}
       height={sticker.height}
       scaleX={sticker.scaleX}
@@ -857,17 +1027,24 @@ function StickerImage({
       draggable
       onPointerDown={e => {
         e.cancelBubble = true
+        if (sticker.tile) {
+          flushSync(() => {
+            onChange({ tile: undefined })
+          })
+        }
         onSelect()
       }}
       onDragEnd={e => {
         const n = e.target as Konva.Image
-        onChange({ x: n.x(), y: n.y() })
+        const abs = n.getAbsolutePosition()
+        onChange({ x: abs.x, y: abs.y })
       }}
       onTransformEnd={e => {
         const n = e.target as Konva.Image
+        const abs = n.getAbsolutePosition()
         onChange({
-          x: n.x(),
-          y: n.y(),
+          x: abs.x,
+          y: abs.y,
           rotation: n.rotation(),
           scaleX: n.scaleX(),
           scaleY: n.scaleY(),
@@ -876,5 +1053,22 @@ function StickerImage({
         })
       }}
     />
+  )
+
+  if (!tile) {
+    return imageNode
+  }
+
+  return (
+    <Group
+      x={tile.x}
+      y={tile.y}
+      clipX={0}
+      clipY={0}
+      clipWidth={tile.width}
+      clipHeight={tile.height}
+    >
+      {imageNode}
+    </Group>
   )
 }

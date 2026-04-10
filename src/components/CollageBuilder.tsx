@@ -5,18 +5,9 @@ import CollagePreview from './CollagePreview'
 import CollageShareActions from './CollageShareActions'
 import BackgroundStudioPanel from './BackgroundStudioPanel'
 import type { StudioToolMode } from '../types/workspace'
+import { COLLAGE_BG_PRESETS } from '../constants/collageBgPresets'
 const SocialBannerEditor = lazy(() => import('./social/SocialBannerEditor'))
 const Gimboz3DViewer = lazy(() => import('./Gimboz3DViewer'))
-
-const BG_PRESETS = [
-  '#11171A',
-  '#000000',
-  '#192124',
-  '#ffffff',
-  '#0054FA',
-  '#6FC50E',
-  '#8EFD09',
-]
 
 function normalizeHex6(input: string): string | null {
   const t = input.trim()
@@ -151,7 +142,7 @@ export default function CollageBuilder({
             </label>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex flex-wrap gap-2">
-                {BG_PRESETS.map(c => (
+                {COLLAGE_BG_PRESETS.map(c => (
                   <button
                     key={c}
                     type="button"
@@ -230,7 +221,7 @@ export default function CollageBuilder({
               </div>
             }
           >
-            <Gimboz3DViewer />
+            <Gimboz3DViewer walletTokenIds={tokenIds} getImageUrl={getImageUrl} />
           </Suspense>
         </div>
       )}
