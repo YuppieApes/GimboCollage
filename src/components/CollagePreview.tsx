@@ -20,6 +20,8 @@ interface Props {
   tileBorderRadiusPx?: number
   /** Optional class on each tile wrapper (e.g. ring/shadow). */
   tileClassName?: string
+  /** Optional image behind the grid (e.g. blob: URL from user upload). */
+  bgImageUrl?: string | null
 }
 
 function TokenTile({
@@ -80,6 +82,7 @@ const CollagePreview = forwardRef<HTMLDivElement, Props>(
       outerPaddingPx,
       tileBorderRadiusPx,
       tileClassName = '',
+      bgImageUrl = null,
     },
     ref,
   ) => {
@@ -87,16 +90,25 @@ const CollagePreview = forwardRef<HTMLDivElement, Props>(
     const count = tokenIds.length
     const { cols } = getGridConfig(layout, Math.max(1, count))
     const pad = outerPaddingPx !== undefined ? outerPaddingPx : gap
+    const hasBgImage = Boolean(bgImageUrl)
 
-    const baseUniform: CSSProperties = {
-      display: 'grid',
-      gridTemplateColumns: `repeat(${cols}, 1fr)`,
-      gap: `${gap}px`,
-      backgroundColor: bgColor,
+    const outerStyle: CSSProperties = {
+      position: 'relative',
+      boxSizing: 'border-box',
       padding: `${pad}px`,
       width: '100%',
       height: fillParent ? '100%' : undefined,
       minHeight: fillParent ? 0 : undefined,
+    }
+
+    const gridStyle: CSSProperties = {
+      display: 'grid',
+      gridTemplateColumns: `repeat(${cols}, 1fr)`,
+      gap: `${gap}px`,
+      position: 'relative',
+      zIndex: 1,
+      backgroundColor: hasBgImage ? 'transparent' : bgColor,
+      minHeight: fillParent ? '100%' : undefined,
       boxSizing: 'border-box',
     }
 
@@ -104,19 +116,32 @@ const CollagePreview = forwardRef<HTMLDivElement, Props>(
       tileBorderRadiusPx != null ? { borderRadius: tileBorderRadiusPx } : undefined
 
     return (
-      <div ref={ref} className={className} style={baseUniform}>
-        {tokenIds.map(id => (
-          <TokenTile
-            key={id}
-            id={id}
-            getImageUrl={getImageUrl}
-            loaded={loaded}
-            setLoaded={setLoaded}
-            showIds={showIds}
-            className={`aspect-square ${tileBorderRadiusPx == null ? 'rounded-lg' : ''} ${tileClassName}`.trim()}
-            style={tileRadiusStyle}
+      <div ref={ref} className={className} style={outerStyle}>
+        {hasBgImage && bgImageUrl && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+            style={{
+              backgroundImage: `url(${bgImageUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
           />
-        ))}
+        )}
+        <div style={gridStyle}>
+          {tokenIds.map(id => (
+            <TokenTile
+              key={id}
+              id={id}
+              getImageUrl={getImageUrl}
+              loaded={loaded}
+              setLoaded={setLoaded}
+              showIds={showIds}
+              className={`aspect-square ${tileBorderRadiusPx == null ? 'rounded-lg' : ''} ${tileClassName}`.trim()}
+              style={tileRadiusStyle}
+            />
+          ))}
+        </div>
       </div>
     )
   },

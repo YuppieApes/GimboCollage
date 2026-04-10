@@ -36,13 +36,16 @@ export default function App() {
     }
   }, [traitsLoading, hasTraits, sortMode])
 
+  /** IDs for collage + RemBackground: explicit gallery picks only, never “all” when something is selected. */
   const collageTokenIds = useMemo(() => {
     if (selection.count > 0) {
       const picked = displayedTokenIds.filter(id => selection.selected.has(id))
       if (picked.length > 0) return picked
+      // Selected set can briefly disagree with displayed order (e.g. filter/sort); still honor selection.
+      return selection.selectedArray
     }
     return displayedTokenIds
-  }, [selection.count, selection.selected, displayedTokenIds])
+  }, [selection.count, selection.selected, selection.selectedArray, displayedTokenIds])
 
   const handleLookup = (addr: string) => {
     const tokens = getTokensForWallet(addr)

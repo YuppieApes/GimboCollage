@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import LayoutPicker, { type LayoutType, getPreviewAspect } from './LayoutPicker'
 import CollagePreview from './CollagePreview'
 import CollageShareActions from './CollageShareActions'
+import BackgroundStudioPanel from './BackgroundStudioPanel'
 
 const BG_PRESETS = [
   '#11171A',
@@ -20,7 +21,7 @@ function normalizeHex6(input: string): string | null {
   return m ? `#${m[1].toLowerCase()}` : null
 }
 
-type BuilderMode = 'collage' | 'social'
+type BuilderMode = 'collage' | 'social' | 'studio'
 
 interface Props {
   tokenIds: number[]
@@ -111,11 +112,17 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
         </h2>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-6 p-1 rounded-xl bg-[#192124] border border-[#31392C] w-fit max-w-full">
+      <div
+        className="flex flex-nowrap items-stretch gap-2 mb-6 p-1 rounded-xl bg-[#192124] border border-[#31392C] w-full max-w-full overflow-x-auto sm:w-fit"
+        role="tablist"
+        aria-label="Builder mode"
+      >
         <button
           type="button"
+          role="tab"
+          aria-selected={builderMode === 'collage'}
           onClick={() => setBuilderMode('collage')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
             ${builderMode === 'collage'
               ? 'bg-[#6FC50E] text-[#11171A]'
               : 'text-[#999A92] hover:text-[#C9D0C0]'
@@ -125,8 +132,23 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={builderMode === 'studio'}
+          onClick={() => setBuilderMode('studio')}
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+            ${builderMode === 'studio'
+              ? 'bg-[#6FC50E] text-[#11171A]'
+              : 'text-[#999A92] hover:text-[#C9D0C0]'
+            }`}
+        >
+          RemBackground
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={builderMode === 'social'}
           onClick={() => setBuilderMode('social')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
             ${builderMode === 'social'
               ? 'bg-[#6FC50E] text-[#11171A]'
               : 'text-[#999A92] hover:text-[#C9D0C0]'
@@ -245,6 +267,14 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
             Banners, wallpapers, and social sizes will be available here later.
           </p>
         </div>
+      )}
+
+      {builderMode === 'studio' && (
+        <BackgroundStudioPanel
+          key={tokenIds.join(',')}
+          tokenIds={tokenIds}
+          getImageUrl={getImageUrl}
+        />
       )}
 
       {builderMode === 'collage' && (
