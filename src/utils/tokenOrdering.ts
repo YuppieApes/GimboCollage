@@ -6,6 +6,10 @@ export type TokenMetaRecord = {
   attrs: TokenAttr[]
   traitCount: number
   rarity: number
+  /** 3D MML document URL from token metadata (when present). */
+  mml?: string
+  /** 3D GLB mesh URL from token metadata (when present). */
+  glb?: string
 }
 
 export type GimbozMetadataById = Record<string, TokenMetaRecord>

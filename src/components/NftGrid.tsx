@@ -7,7 +7,6 @@ interface Props {
   onToggle: (tokenId: number) => void
   onSelectAll: () => void
   onClearAll: () => void
-  onBuildCollage: () => void
   getImageUrl: (tokenId: number) => string
   selectedCount: number
   sortMode: SortMode
@@ -24,7 +23,6 @@ export default function NftGrid({
   onToggle,
   onSelectAll,
   onClearAll,
-  onBuildCollage,
   getImageUrl,
   selectedCount,
   sortMode,
@@ -45,7 +43,7 @@ export default function NftGrid({
           className="px-4 py-2 rounded-lg bg-[#6FC50E] hover:bg-[#8EFD09]
                      text-[#11171A] text-sm font-semibold transition-colors"
         >
-          Use All Gimboz ({tokenIds.length})
+          Use all → Collage ({tokenIds.length})
         </button>
         {selectedCount > 0 && (
           <button
@@ -57,8 +55,8 @@ export default function NftGrid({
             Clear Selection
           </button>
         )}
-        <span className="text-sm text-[#999A92] ml-auto">
-          Tap to select &middot; {selectedCount} of {tokenIds.length} selected
+        <span className="text-sm text-[#999A92] ml-auto tabular-nums">
+          {selectedCount}/{tokenIds.length} selected
         </span>
       </div>
 
@@ -91,7 +89,7 @@ export default function NftGrid({
             <span className="text-xs text-[#70736E]">Loading traits…</span>
           )}
           {!traitsLoading && !traitsAvailable && (
-            <span className="text-xs text-[#70736E]">Run npm run build-metadata for rarity sort and 3-trait filter.</span>
+            <span className="text-xs text-[#70736E]">Trait sort: run build-metadata locally.</span>
           )}
         </div>
 
@@ -125,24 +123,6 @@ export default function NftGrid({
         </div>
       )}
 
-      {selectedCount > 0 && tokenIds.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-[#11171A]/95 backdrop-blur-sm
-                        border-t border-[#31392C] p-4 z-50 animate-fade-in">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <span className="text-sm text-[#C9D0C0] font-medium">
-              {selectedCount} Gimboz selected
-            </span>
-            <button
-              type="button"
-              onClick={onBuildCollage}
-              className="px-6 py-2.5 rounded-xl bg-[#6FC50E] hover:bg-[#8EFD09]
-                         text-[#11171A] font-bold transition-colors glow-pulse"
-            >
-              Build Collage
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

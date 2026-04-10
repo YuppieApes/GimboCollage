@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
+import { lazy, Suspense, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import LayoutPicker, { type LayoutType, getPreviewAspect } from './LayoutPicker'
 import CollagePreview from './CollagePreview'
 import CollageShareActions from './CollageShareActions'
 import BackgroundStudioPanel from './BackgroundStudioPanel'
+import type { StudioToolMode } from '../types/workspace'
+const SocialBannerEditor = lazy(() => import('./social/SocialBannerEditor'))
+const Gimboz3DViewer = lazy(() => import('./Gimboz3DViewer'))
 
 const BG_PRESETS = [
   '#11171A',
@@ -21,16 +24,21 @@ function normalizeHex6(input: string): string | null {
   return m ? `#${m[1].toLowerCase()}` : null
 }
 
-type BuilderMode = 'collage' | 'social' | 'studio'
-
 interface Props {
   tokenIds: number[]
   getImageUrl: (tokenId: number) => string
-  onBack: () => void
+  /** Current tool; parent owns tab state when using the workspace layout. */
+  builderMode: StudioToolMode
+  /** Hide top back/title row (workspace shell provides navigation). */
+  compact?: boolean
 }
 
-export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props) {
-  const [builderMode, setBuilderMode] = useState<BuilderMode>('collage')
+export default function CollageBuilder({
+  tokenIds,
+  getImageUrl,
+  builderMode,
+  compact = false,
+}: Props) {
 
   const [layout, setLayout] = useState<LayoutType>(() => {
     const n = tokenIds.length
@@ -92,71 +100,14 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
 
   return (
     <div className="w-full animate-fade-in">
-      <div className="flex flex-wrap items-center gap-4 mb-6">
-        <button
-          type="button"
-          onClick={onBack}
-          className="px-4 py-2 rounded-lg bg-[#252B2E] hover:bg-[#31392C]
-                     text-[#C9D0C0] text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M19 12H5M12 19l-7-7 7-7" />
-          </svg>
-          Back
-        </button>
-        <h2 className="text-xl font-bold text-[#C9D0C0]">
-          Build Your Collage
-          <span className="text-sm font-normal text-[#999A92] ml-2">
-            ({tokenIds.length} Gimboz)
-          </span>
-        </h2>
-      </div>
-
-      <div
-        className="flex flex-nowrap items-stretch gap-2 mb-6 p-1 rounded-xl bg-[#192124] border border-[#31392C] w-full max-w-full overflow-x-auto sm:w-fit"
-        role="tablist"
-        aria-label="Builder mode"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={builderMode === 'collage'}
-          onClick={() => setBuilderMode('collage')}
-          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
-            ${builderMode === 'collage'
-              ? 'bg-[#6FC50E] text-[#11171A]'
-              : 'text-[#999A92] hover:text-[#C9D0C0]'
-            }`}
-        >
-          Collage
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={builderMode === 'studio'}
-          onClick={() => setBuilderMode('studio')}
-          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
-            ${builderMode === 'studio'
-              ? 'bg-[#6FC50E] text-[#11171A]'
-              : 'text-[#999A92] hover:text-[#C9D0C0]'
-            }`}
-        >
-          RemBackground
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={builderMode === 'social'}
-          onClick={() => setBuilderMode('social')}
-          className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-semibold transition-colors
-            ${builderMode === 'social'
-              ? 'bg-[#6FC50E] text-[#11171A]'
-              : 'text-[#999A92] hover:text-[#C9D0C0]'
-            }`}
-        >
-          Banners &amp; wallpapers
-        </button>
-      </div>
+      {!compact && (
+        <div className="flex flex-wrap items-center gap-4 mb-6">
+          <h2 className="text-xl font-bold text-[#C9D0C0]">
+            Studio
+            <span className="text-sm font-normal text-[#999A92] ml-2">({tokenIds.length} Gimboz)</span>
+          </h2>
+        </div>
+      )}
 
       {builderMode === 'collage' && (
         <div className="bg-[#192124] rounded-2xl p-5 mb-6 space-y-4">
@@ -248,24 +199,47 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
                 </div>
               </div>
             </div>
-            <p className="text-xs text-[#70736E] mt-3">
-              Tap a swatch, use the color wheel, or type a hex code (e.g. <code className="text-[#999A92]">#192124</code>).
-            </p>
           </div>
         </div>
       )}
 
       {builderMode === 'social' && (
-        <div
-          className="bg-[#192124] rounded-2xl border border-[#31392C] p-12 sm:p-16 mb-6 flex flex-col items-center justify-center text-center min-h-[200px]"
-          role="status"
-        >
-          <p className="text-2xl sm:text-3xl font-bold text-[#8EFD09] tracking-tight">
+        <div className="bg-[#161C1F] rounded-2xl border border-[#31392C] p-4 sm:p-6 mb-6">
+          <h3 className="text-lg font-semibold text-[#E8EBE6] mb-4">X / Twitter header</h3>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center gap-3 py-16 text-[#999A92] text-sm">
+                <span className="h-8 w-8 border-2 border-[#6FC50E] border-t-transparent rounded-full animate-spin" />
+                Loading editor…
+              </div>
+            }
+          >
+            <SocialBannerEditor tokenIds={tokenIds} getImageUrl={getImageUrl} />
+          </Suspense>
+        </div>
+      )}
+
+      {builderMode === 'viewer3d' && (
+        <div className="bg-[#161C1F] rounded-2xl border border-[#31392C] p-4 sm:p-6 mb-6">
+          <h3 className="text-lg font-semibold text-[#E8EBE6] mb-4">3D model</h3>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center gap-3 py-16 text-[#999A92] text-sm">
+                <span className="h-8 w-8 border-2 border-[#6FC50E] border-t-transparent rounded-full animate-spin" />
+                Loading viewer…
+              </div>
+            }
+          >
+            <Gimboz3DViewer />
+          </Suspense>
+        </div>
+      )}
+
+      {builderMode === 'wallpaper' && (
+        <div className="bg-[#192124] rounded-2xl border border-[#6FC50E]/35 ring-1 ring-[#6FC50E]/20 p-10 sm:p-16 mb-6 text-center">
+          <h3 className="text-2xl font-bold text-[#6FC50E] mb-2 drop-shadow-[0_0_24px_rgba(111,197,14,0.25)]">
             Coming soon
-          </p>
-          <p className="text-sm text-[#70736E] mt-3 max-w-sm">
-            Banners, wallpapers, and social sizes will be available here later.
-          </p>
+          </h3>
         </div>
       )}
 
@@ -279,7 +253,7 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
 
       {builderMode === 'collage' && (
         <div className="bg-[#192124] rounded-2xl p-4 mb-6">
-          <p className="text-center text-xs text-[#70736E] mb-3">Click preview to view full size</p>
+          <p className="text-center text-xs text-[#70736E] mb-3">Tap preview for full screen</p>
           <div className="max-w-3xl mx-auto">
             <div
               role="button"
@@ -332,7 +306,7 @@ export default function CollageBuilder({ tokenIds, getImageUrl, onBack }: Props)
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                   <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
-                <span>Back to collage</span>
+                <span>Close</span>
               </button>
               <span className="hidden sm:block text-sm text-[#70736E] pr-2">Esc to close</span>
             </header>

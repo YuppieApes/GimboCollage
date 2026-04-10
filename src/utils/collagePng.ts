@@ -122,6 +122,50 @@ export async function saveCollagePngFromNode(
   }
 }
 
+/** Save an existing PNG blob (e.g. Konva stage export) with the same mobile/desktop behavior as {@link saveCollagePngFromNode}. */
+export async function savePngBlob(
+  blob: Blob,
+  filename: string,
+): Promise<SaveCollagePngResult> {
+  const base = filename.replace(/\.png$/i, '')
+  const file = new File([blob], `${base}.png`, {
+    type: blob.type && blob.type !== 'application/octet-stream' ? blob.type : 'image/png',
+  })
+
+  const mobile = preferNativeShareForX()
+
+  if (mobile) {
+    if (openBlobPngInNewTab(blob)) {
+      return { ok: true, via: 'new_tab' }
+    }
+    const shareFiles = { files: [file] }
+    if (
+      typeof navigator.share === 'function' &&
+      navigator.canShare?.(shareFiles)
+    ) {
+      try {
+        await navigator.share(shareFiles)
+        return { ok: true, via: 'share_sheet' }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e
+      }
+    }
+  }
+
+  try {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.download = `${base}.png`
+    link.href = url
+    link.click()
+    URL.revokeObjectURL(url)
+    return { ok: true, via: 'download' }
+  } catch {
+    if (openBlobPngInNewTab(blob)) return { ok: true, via: 'new_tab' }
+    return { ok: false }
+  }
+}
+
 export function twitterIntentTweetUrl(text: string): string {
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`
 }

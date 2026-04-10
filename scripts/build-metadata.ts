@@ -4,7 +4,7 @@
  *
  * Usage: npm run build-metadata
  */
-import { createPublicClient, http, parseAbiItem, type Address } from 'viem'
+import { createPublicClient, http } from 'viem'
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -68,6 +68,14 @@ async function fetchMetadataJson(tokenUri: string): Promise<unknown | null> {
   } catch {
     return null
   }
+}
+
+function optionalMetadataUrl(raw: unknown, key: string): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const v = (raw as Record<string, unknown>)[key]
+  if (typeof v !== 'string') return undefined
+  const t = v.trim()
+  return t.length > 0 ? t : undefined
 }
 
 function normalizeAttributes(raw: unknown): StoredAttr[] {
@@ -142,10 +150,12 @@ async function main() {
 
       const json = await fetchMetadataJson(tokenUri)
       const attrs = normalizeAttributes(json)
-      return { id, attrs, ok: true as const }
+      const mml = optionalMetadataUrl(json, 'mml')
+      const glb = optionalMetadataUrl(json, 'glb')
+      return { id, attrs, mml, glb, ok: true as const }
     } catch (e) {
       console.warn(`  token ${id}: ${e instanceof Error ? e.message : e}`)
-      return { id, attrs: [] as StoredAttr[], ok: false as const }
+      return { id, attrs: [] as StoredAttr[], mml: undefined, glb: undefined, ok: false as const }
     }
   })
 
@@ -158,7 +168,13 @@ async function main() {
 
   const byId: Record<
     string,
-    { attrs: StoredAttr[]; traitCount: number; rarity: number }
+    {
+      attrs: StoredAttr[]
+      traitCount: number
+      rarity: number
+      mml?: string
+      glb?: string
+    }
   > = {}
 
   for (const row of perTokenAttrs) {
@@ -168,11 +184,14 @@ async function main() {
       const c = freq.get(traitKey(a)) || 1
       rarity += 1 / c
     }
-    byId[String(row.id)] = {
+    const entry: (typeof byId)[string] = {
       attrs: row.attrs,
       traitCount: counted.length,
       rarity: Math.round(rarity * 1e6) / 1e6,
     }
+    if (row.mml) entry.mml = row.mml
+    if (row.glb) entry.glb = row.glb
+    byId[String(row.id)] = entry
   }
 
   mkdirSync(publicDir, { recursive: true })

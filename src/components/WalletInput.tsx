@@ -23,7 +23,7 @@ export default function WalletInput({ onLookup, loading }: Props) {
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-lg mx-auto">
       <label className="block text-sm font-medium text-[#999A92] mb-2">
-        Paste any wallet address
+        Wallet address
       </label>
       <div className="flex gap-2">
         <input
